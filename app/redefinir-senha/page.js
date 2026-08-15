@@ -1,0 +1,218 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "../../lib/supabase/client";
+
+export default function RedefinirSenha() {
+  const router = useRouter();
+  const supabase = createClient();
+
+  const [senha, setSenha] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
+  const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
+  const [carregando, setCarregando] = useState(false);
+
+  async function salvarNovaSenha(event) {
+    event.preventDefault();
+
+    setErro("");
+    setSucesso("");
+
+    if (senha.length < 8) {
+      setErro("A senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+
+    if (senha !== confirmarSenha) {
+      setErro("As senhas não coincidem.");
+      return;
+    }
+
+    setCarregando(true);
+
+    const { error } = await supabase.auth.updateUser({
+      password: senha,
+    });
+
+    if (error) {
+      setErro("Não foi possível redefinir a senha. Solicite um novo link de recuperação.");
+      setCarregando(false);
+      return;
+    }
+
+    setSucesso("Senha alterada com sucesso.");
+
+    setTimeout(() => {
+      router.push("/login");
+      router.refresh();
+    }, 1500);
+  }
+
+  return (
+    <main style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.brand}>
+          <h1 style={styles.logo}>
+            POWER <span style={styles.orange}>ASSIST</span>
+          </h1>
+          <p style={styles.subtitle}>ASSISTÊNCIA 24H</p>
+        </div>
+
+        <h2 style={styles.title}>Redefinir senha</h2>
+
+        <p style={styles.description}>
+          Cadastre uma nova senha para acessar o sistema.
+        </p>
+
+        <form onSubmit={salvarNovaSenha} style={styles.form}>
+          <label style={styles.label}>Nova senha</label>
+
+          <input
+            type="password"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            placeholder="Digite a nova senha"
+            required
+            style={styles.input}
+          />
+
+          <label style={styles.label}>Confirmar nova senha</label>
+
+          <input
+            type="password"
+            value={confirmarSenha}
+            onChange={(e) => setConfirmarSenha(e.target.value)}
+            placeholder="Digite novamente a nova senha"
+            required
+            style={styles.input}
+          />
+
+          {erro && <p style={styles.error}>{erro}</p>}
+          {sucesso && <p style={styles.success}>{sucesso}</p>}
+
+          <button
+            type="submit"
+            disabled={carregando}
+            style={styles.button}
+          >
+            {carregando ? "SALVANDO..." : "SALVAR NOVA SENHA"}
+          </button>
+        </form>
+
+        <p style={styles.footer}>
+          Power Assist 24h • Sistema de Operações
+        </p>
+      </div>
+    </main>
+  );
+}
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: "#111111",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+    fontFamily: "Arial, Helvetica, sans-serif",
+  },
+
+  card: {
+    width: "100%",
+    maxWidth: "420px",
+    background: "#ffffff",
+    padding: "40px",
+    borderRadius: "14px",
+    boxSizing: "border-box",
+  },
+
+  brand: {
+    textAlign: "center",
+    marginBottom: "35px",
+  },
+
+  logo: {
+    margin: 0,
+    fontSize: "28px",
+    fontWeight: "800",
+    color: "#111111",
+  },
+
+  orange: {
+    color: "#ff6a00",
+  },
+
+  subtitle: {
+    marginTop: "6px",
+    fontSize: "11px",
+    letterSpacing: "3px",
+    color: "#777777",
+  },
+
+  title: {
+    marginBottom: "7px",
+    fontSize: "22px",
+  },
+
+  description: {
+    color: "#777777",
+    fontSize: "14px",
+    marginBottom: "28px",
+  },
+
+  form: {
+    display: "flex",
+    flexDirection: "column",
+  },
+
+  label: {
+    fontSize: "13px",
+    fontWeight: "bold",
+    marginBottom: "7px",
+  },
+
+  input: {
+    padding: "13px",
+    border: "1px solid #dddddd",
+    borderRadius: "7px",
+    marginBottom: "18px",
+    fontSize: "14px",
+  },
+
+  button: {
+    background: "#ff6a00",
+    color: "#ffffff",
+    border: "none",
+    borderRadius: "7px",
+    padding: "14px",
+    fontWeight: "bold",
+    cursor: "pointer",
+    marginTop: "5px",
+  },
+
+  error: {
+    background: "#fff0f0",
+    color: "#b42318",
+    padding: "10px",
+    borderRadius: "6px",
+    fontSize: "13px",
+  },
+
+  success: {
+    background: "#ecfdf3",
+    color: "#027a48",
+    padding: "10px",
+    borderRadius: "6px",
+    fontSize: "13px",
+  },
+
+  footer: {
+    textAlign: "center",
+    color: "#999999",
+    fontSize: "11px",
+    marginTop: "30px",
+  },
+};
