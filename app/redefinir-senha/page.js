@@ -1,24 +1,88 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase/client";
 
 export default function RedefinirSenha() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [senha, setSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [verificando, setVerificando] = useState(true);
+  const [sessaoValida, setSessaoValida] = useState(false);
+
+  useEffect(() => {
+    async function prepararRecuperacao() {
+      try {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+
+        if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          setSessaoValida(true);
+
+          window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname
+          );
+
+          return;
+        }
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session) {
+          setSessaoValida(true);
+        } else {
+          setErro(
+            "O link de recuperação é inválido ou expirou. Solicite um novo link."
+          );
+        }
+      } catch (error) {
+        console.error("Erro ao validar recuperação:", error);
+
+        setErro(
+          "Não foi possível validar o link de recuperação. Solicite um novo link."
+        );
+      } finally {
+        setVerificando(false);
+      }
+    }
+
+    prepararRecuperacao();
+  }, [supabase]);
 
   async function salvarNovaSenha(event) {
     event.preventDefault();
 
     setErro("");
     setSucesso("");
+
+    if (!sessaoValida) {
+      setErro(
+        "A sessão de recuperação não é válida. Solicite um novo link."
+      );
+      return;
+    }
 
     if (senha.length < 8) {
       setErro("A senha deve ter pelo menos 8 caracteres.");
@@ -32,22 +96,32 @@ export default function RedefinirSenha() {
 
     setCarregando(true);
 
-    const { error } = await supabase.auth.updateUser({
-      password: senha,
-    });
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: senha,
+      });
 
-    if (error) {
-      setErro("Não foi possível redefinir a senha. Solicite um novo link de recuperação.");
+      if (error) {
+        throw error;
+      }
+
+      setSucesso("Senha alterada com sucesso.");
+
+      setTimeout(async () => {
+        await supabase.auth.signOut();
+        router.replace("/login");
+        router.refresh();
+      }, 1500);
+    } catch (error) {
+      console.error("Erro ao redefinir senha:", error);
+
+      setErro(
+        error?.message ||
+          "Não foi possível redefinir a senha. Solicite um novo link."
+      );
+    } finally {
       setCarregando(false);
-      return;
     }
-
-    setSucesso("Senha alterada com sucesso.");
-
-    setTimeout(() => {
-      router.push("/login");
-      router.refresh();
-    }, 1500);
   }
 
   return (
@@ -66,40 +140,51 @@ export default function RedefinirSenha() {
           Cadastre uma nova senha para acessar o sistema.
         </p>
 
-        <form onSubmit={salvarNovaSenha} style={styles.form}>
-          <label style={styles.label}>Nova senha</label>
+        {verificando ? (
+          <div style={styles.info}>
+            Validando link de recuperação...
+          </div>
+        ) : (
+          <form onSubmit={salvarNovaSenha} style={styles.form}>
+            <label style={styles.label}>Nova senha</label>
 
-          <input
-            type="password"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            placeholder="Digite a nova senha"
-            required
-            style={styles.input}
-          />
+            <input
+              type="password"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              placeholder="Digite a nova senha"
+              required
+              disabled={!sessaoValida}
+              style={styles.input}
+            />
 
-          <label style={styles.label}>Confirmar nova senha</label>
+            <label style={styles.label}>Confirmar nova senha</label>
 
-          <input
-            type="password"
-            value={confirmarSenha}
-            onChange={(e) => setConfirmarSenha(e.target.value)}
-            placeholder="Digite novamente a nova senha"
-            required
-            style={styles.input}
-          />
+            <input
+              type="password"
+              value={confirmarSenha}
+              onChange={(e) => setConfirmarSenha(e.target.value)}
+              placeholder="Digite novamente a nova senha"
+              required
+              disabled={!sessaoValida}
+              style={styles.input}
+            />
 
-          {erro && <p style={styles.error}>{erro}</p>}
-          {sucesso && <p style={styles.success}>{sucesso}</p>}
+            {erro && <p style={styles.error}>{erro}</p>}
+            {sucesso && <p style={styles.success}>{sucesso}</p>}
 
-          <button
-            type="submit"
-            disabled={carregando}
-            style={styles.button}
-          >
-            {carregando ? "SALVANDO..." : "SALVAR NOVA SENHA"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={carregando || !sessaoValida}
+              style={{
+                ...styles.button,
+                opacity: carregando || !sessaoValida ? 0.6 : 1,
+              }}
+            >
+              {carregando ? "SALVANDO..." : "SALVAR NOVA SENHA"}
+            </button>
+          </form>
+        )}
 
         <p style={styles.footer}>
           Power Assist 24h • Sistema de Operações
@@ -191,6 +276,14 @@ const styles = {
     fontWeight: "bold",
     cursor: "pointer",
     marginTop: "5px",
+  },
+
+  info: {
+    background: "#f2f4f7",
+    color: "#475467",
+    padding: "12px",
+    borderRadius: "7px",
+    fontSize: "13px",
   },
 
   error: {
