@@ -1,4 +1,115 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "../lib/supabase/client";
+
 export default function Home() {
+  const supabase = useMemo(() => createClient(), []);
+
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+
+  const [abertos, setAbertos] = useState(0);
+  const [emAtendimento, setEmAtendimento] = useState(0);
+  const [finalizadosHoje, setFinalizadosHoje] = useState(0);
+  const [prestadoresAtivos, setPrestadoresAtivos] = useState(0);
+  const [acionamentos, setAcionamentos] = useState([]);
+
+  useEffect(() => {
+    carregarPainel();
+  }, []);
+
+  async function carregarPainel() {
+    setCarregando(true);
+    setErro("");
+
+    try {
+      const inicioHoje = new Date();
+      inicioHoje.setHours(0, 0, 0, 0);
+
+      const [
+        abertosResult,
+        atendimentoResult,
+        finalizadosResult,
+        prestadoresResult,
+        recentesResult,
+      ] = await Promise.all([
+        supabase
+          .from("acionamentos")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "ABERTO"),
+
+        supabase
+          .from("acionamentos")
+          .select("*", { count: "exact", head: true })
+          .in("status", [
+            "PRESTADOR_ACIONADO",
+            "ACEITO",
+            "EM_DESLOCAMENTO",
+            "NO_LOCAL",
+            "EM_REMOCAO",
+          ]),
+
+        supabase
+          .from("acionamentos")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "FINALIZADO")
+          .gte("created_at", inicioHoje.toISOString()),
+
+        supabase
+          .from("prestadores")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "ATIVO"),
+
+        supabase
+          .from("acionamentos")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(5),
+      ]);
+
+      const resultados = [
+        abertosResult,
+        atendimentoResult,
+        finalizadosResult,
+        prestadoresResult,
+        recentesResult,
+      ];
+
+      const resultadoComErro = resultados.find((resultado) => resultado.error);
+
+      if (resultadoComErro) {
+        throw resultadoComErro.error;
+      }
+
+      setAbertos(abertosResult.count || 0);
+      setEmAtendimento(atendimentoResult.count || 0);
+      setFinalizadosHoje(finalizadosResult.count || 0);
+      setPrestadoresAtivos(prestadoresResult.count || 0);
+      setAcionamentos(recentesResult.data || []);
+    } catch (error) {
+      console.error(error);
+      setErro(error?.message || "Não foi possível carregar o painel.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  function formatarStatus(status) {
+    const nomes = {
+      ABERTO: "Em aberto",
+      PRESTADOR_ACIONADO: "Prestador acionado",
+      ACEITO: "Aceito",
+      EM_DESLOCAMENTO: "Em deslocamento",
+      NO_LOCAL: "No local",
+      EM_REMOCAO: "Em remoção",
+      FINALIZADO: "Finalizado",
+      CANCELADO: "Cancelado",
+    };
+
+    return nomes[status] || status || "-";
+  }
+
   return (
     <main style={styles.page}>
       <aside style={styles.sidebar}>
@@ -6,17 +117,38 @@ export default function Home() {
           <h1 style={styles.logo}>
             POWER <span style={styles.orange}>ASSIST</span>
           </h1>
-          <p style={styles.subtitle}>ASSISTÊNCIA 24H</p>
+
+          <p style={styles.logoSubtitle}>ASSISTÊNCIA 24H</p>
         </div>
 
         <nav style={styles.menu}>
-          <div style={styles.active}>▣ Painel</div>
-        <a href="/novo-acionamento" style={styles.item}>+ Novo acionamento</a>
-          <div style={styles.item}>◉ Acionamentos</div>
-          <div style={styles.item}>♙ Clientes</div>
-          <div style={styles.item}>🚗 Veículos</div>
-          <div style={styles.item}>🚚 Prestadores</div>
-          <div style={styles.item}>▤ Financeiro</div>
+          <a href="/" style={styles.active}>
+            ▣ Painel
+          </a>
+
+          <a href="/novo-acionamento" style={styles.item}>
+            ＋ Novo acionamento
+          </a>
+
+          <a href="/acionamentos" style={styles.item}>
+            ◉ Acionamentos
+          </a>
+
+          <a href="/clientes" style={styles.item}>
+            ♟ Clientes
+          </a>
+
+          <a href="/veiculos" style={styles.item}>
+            🚗 Veículos
+          </a>
+
+          <a href="/prestadores" style={styles.item}>
+            🚚 Prestadores
+          </a>
+
+          <a href="/financeiro" style={styles.item}>
+            ▤ Financeiro
+          </a>
         </nav>
 
         <div style={styles.user}>
@@ -29,47 +161,103 @@ export default function Home() {
         <header style={styles.header}>
           <div>
             <h2 style={styles.title}>Painel de Operações</h2>
-            <p style={styles.description}>
+
+            <p style={styles.subtitle}>
               Gerenciamento de assistência e acionamentos 24 horas
             </p>
           </div>
 
-          <button style={styles.button}>+ NOVO ACIONAMENTO</button>
+          <a href="/novo-acionamento" style={styles.newButton}>
+            + NOVO ACIONAMENTO
+          </a>
         </header>
 
+        {erro && <div style={styles.error}>{erro}</div>}
+
         <div style={styles.cards}>
-          <Card titulo="EM ABERTO" valor="0" />
-          <Card titulo="EM ATENDIMENTO" valor="0" />
-          <Card titulo="FINALIZADOS HOJE" valor="0" />
-          <Card titulo="PRESTADORES ATIVOS" valor="0" />
+          <div style={styles.card}>
+            <span style={styles.cardLabel}>EM ABERTO</span>
+            <strong style={styles.cardNumber}>
+              {carregando ? "..." : abertos}
+            </strong>
+          </div>
+
+          <div style={styles.card}>
+            <span style={styles.cardLabel}>EM ATENDIMENTO</span>
+            <strong style={styles.cardNumber}>
+              {carregando ? "..." : emAtendimento}
+            </strong>
+          </div>
+
+          <div style={styles.card}>
+            <span style={styles.cardLabel}>FINALIZADOS HOJE</span>
+            <strong style={styles.cardNumber}>
+              {carregando ? "..." : finalizadosHoje}
+            </strong>
+          </div>
+
+          <div style={styles.card}>
+            <span style={styles.cardLabel}>PRESTADORES ATIVOS</span>
+            <strong style={styles.cardNumber}>
+              {carregando ? "..." : prestadoresAtivos}
+            </strong>
+          </div>
         </div>
 
-        <section style={styles.panel}>
+        <div style={styles.panel}>
           <div style={styles.panelHeader}>
-            <h3>Acionamentos recentes</h3>
-            <span style={styles.link}>Ver todos</span>
+            <h3 style={styles.panelTitle}>Acionamentos recentes</h3>
+
+            <a href="/acionamentos" style={styles.link}>
+              Ver todos
+            </a>
           </div>
 
-          <div style={styles.empty}>
-            <div style={styles.truck}>🚚</div>
-            <h3>Nenhum acionamento registrado</h3>
-            <p>
-              Os novos protocolos aparecerão aqui assim que forem cadastrados.
-            </p>
-            <button style={styles.button}>+ CRIAR PRIMEIRO ACIONAMENTO</button>
-          </div>
-        </section>
+          {carregando ? (
+            <div style={styles.empty}>
+              <p>Carregando acionamentos...</p>
+            </div>
+          ) : acionamentos.length === 0 ? (
+            <div style={styles.empty}>
+              <div style={styles.truck}>🚚</div>
+
+              <h3>Nenhum acionamento registrado</h3>
+
+              <p>
+                Os novos protocolos aparecerão aqui assim que forem cadastrados.
+              </p>
+
+              <a href="/novo-acionamento" style={styles.createButton}>
+                + CRIAR PRIMEIRO ACIONAMENTO
+              </a>
+            </div>
+          ) : (
+            <div style={styles.list}>
+              {acionamentos.map((acionamento) => (
+                <div key={acionamento.id} style={styles.row}>
+                  <div>
+                    <strong style={styles.protocol}>
+                      {acionamento.protocolo}
+                    </strong>
+
+                    <div style={styles.route}>
+                      {acionamento.origem || "Origem não informada"}
+                      {acionamento.destino
+                        ? ` → ${acionamento.destino}`
+                        : ""}
+                    </div>
+                  </div>
+
+                  <div style={styles.status}>
+                    {formatarStatus(acionamento.status)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
     </main>
-  );
-}
-
-function Card({ titulo, valor }) {
-  return (
-    <div style={styles.card}>
-      <span style={styles.cardTitle}>{titulo}</span>
-      <strong style={styles.number}>{valor}</strong>
-    </div>
   );
 }
 
@@ -77,66 +265,67 @@ const styles = {
   page: {
     minHeight: "100vh",
     display: "flex",
-    margin: 0,
-    background: "#f5f6f8",
-    color: "#171717",
-    fontFamily: "Arial, sans-serif",
+    background: "#f4f5f7",
+    fontFamily: "Arial, Helvetica, sans-serif",
+    color: "#111111",
   },
 
   sidebar: {
-    width: "245px",
+    width: "240px",
     minHeight: "100vh",
     background: "#111111",
     color: "#ffffff",
-    padding: "30px 22px",
+    padding: "35px 18px 20px",
     boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "space-between",
   },
 
   logo: {
     margin: 0,
-    fontSize: "23px",
+    fontSize: "24px",
     fontWeight: "800",
   },
 
   orange: {
-    color: "#ff6a00",
+    color: "#ff6500",
   },
 
-  subtitle: {
+  logoSubtitle: {
     marginTop: "5px",
-    color: "#9d9d9d",
     fontSize: "11px",
-    letterSpacing: "2px",
+    letterSpacing: "3px",
+    color: "#dddddd",
   },
 
   menu: {
-    marginTop: "45px",
     display: "flex",
     flexDirection: "column",
     gap: "8px",
-  },
-
-  item: {
-    padding: "13px 15px",
-    borderRadius: "7px",
-    color: "#d0d0d0",
-    fontSize: "14px",
+    marginTop: "95px",
+    flex: 1,
   },
 
   active: {
-    padding: "13px 15px",
-    borderRadius: "7px",
-    background: "#ff6a00",
+    display: "block",
+    background: "#ff6500",
     color: "#ffffff",
-    fontSize: "14px",
+    textDecoration: "none",
+    padding: "14px",
+    borderRadius: "7px",
     fontWeight: "bold",
   },
 
+  item: {
+    display: "block",
+    color: "#ffffff",
+    textDecoration: "none",
+    padding: "14px",
+    borderRadius: "7px",
+  },
+
   user: {
-    borderTop: "1px solid #333",
+    borderTop: "1px solid #333333",
     paddingTop: "20px",
     display: "flex",
     flexDirection: "column",
@@ -146,90 +335,148 @@ const styles = {
   content: {
     flex: 1,
     padding: "38px",
+    boxSizing: "border-box",
   },
 
   header: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: "20px",
+    marginBottom: "38px",
   },
 
   title: {
+    fontSize: "30px",
     margin: 0,
-    fontSize: "28px",
   },
 
-  description: {
-    color: "#777",
-    marginTop: "7px",
+  subtitle: {
+    color: "#777777",
+    marginTop: "6px",
   },
 
-  button: {
-    background: "#ff6a00",
+  newButton: {
+    background: "#ff6500",
     color: "#ffffff",
-    border: 0,
-    borderRadius: "7px",
-    padding: "13px 18px",
+    padding: "14px 20px",
+    borderRadius: "8px",
+    textDecoration: "none",
     fontWeight: "bold",
-    cursor: "pointer",
   },
 
   cards: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
     gap: "18px",
-    marginTop: "35px",
+    marginBottom: "25px",
   },
 
   card: {
     background: "#ffffff",
+    padding: "25px",
     borderRadius: "10px",
-    padding: "22px",
     boxShadow: "0 1px 5px rgba(0,0,0,0.08)",
     display: "flex",
     flexDirection: "column",
+    gap: "12px",
   },
 
-  cardTitle: {
-    color: "#777",
+  cardLabel: {
     fontSize: "12px",
-    fontWeight: "bold",
+    color: "#666666",
   },
 
-  number: {
-    marginTop: "10px",
+  cardNumber: {
     fontSize: "32px",
   },
 
   panel: {
-    marginTop: "25px",
     background: "#ffffff",
     borderRadius: "10px",
     padding: "25px",
-    minHeight: "350px",
-    boxShadow: "0 1px 5px rgba(0,0,0,0.08)",
+    boxShadow: "0 1px 5px rgba(0,0,0,0.06)",
   },
 
   panelHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingBottom: "20px",
     borderBottom: "1px solid #eeeeee",
-    paddingBottom: "15px",
+  },
+
+  panelTitle: {
+    fontSize: "20px",
+    margin: 0,
   },
 
   link: {
-    color: "#ff6a00",
+    color: "#ff6500",
+    textDecoration: "none",
     fontWeight: "bold",
   },
 
   empty: {
     textAlign: "center",
-    paddingTop: "65px",
+    padding: "70px 20px",
     color: "#666666",
   },
 
   truck: {
-    fontSize: "45px",
+    fontSize: "38px",
+  },
+
+  createButton: {
+    display: "inline-block",
+    marginTop: "15px",
+    background: "#ff6500",
+    color: "#ffffff",
+    padding: "12px 18px",
+    borderRadius: "7px",
+    textDecoration: "none",
+    fontWeight: "bold",
+  },
+
+  list: {
+    display: "flex",
+    flexDirection: "column",
+  },
+
+  row: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "18px 5px",
+    borderBottom: "1px solid #eeeeee",
+    gap: "20px",
+  },
+
+  protocol: {
+    fontSize: "15px",
+  },
+
+  route: {
+    marginTop: "6px",
+    color: "#777777",
+    fontSize: "13px",
+  },
+
+  status: {
+    background: "#fff3e8",
+    color: "#d95400",
+    padding: "7px 10px",
+    borderRadius: "20px",
+    fontSize: "12px",
+    fontWeight: "bold",
+    whiteSpace: "nowrap",
+  },
+
+  error: {
+    background: "#fff0f0",
+    color: "#b42318",
+    padding: "12px",
+    borderRadius: "7px",
+    marginBottom: "20px",
   },
 };
