@@ -11,7 +11,7 @@ export default function Home() {
 
         <nav style={styles.menu}>
           <div style={styles.active}>▣ Painel</div>
-          <div style={styles.item}>＋ Novo acionamento</div>
+        <a href="/novo-acionamento" style={styles.item}>+ Novo acionamento</a>
           <div style={styles.item}>◉ Acionamentos</div>
           <div style={styles.item}>♙ Clientes</div>
           <div style={styles.item}>🚗 Veículos</div>
